@@ -28,13 +28,20 @@ GEOCODING_params = {
 if __name__ == "__main__":
     location = "Singapore"
 
+    dir_path = f"{location}_TrafficIncidents"
+    os.makedirs(dir_path, exist_ok = True)
+
     Geocode_API = Geocode(GEOCODING_API_URLS)
     IncidentsAPI = TrafficIncidents(TRAFFIC_INCIDENTS_API_URLS)
-    
+
+    #get bbox for the location
     INCIDENTS_params['bbox'] = Geocode_API.reformatbbox(Geocode_API.get_bbox(GEOCODING_params, location))
+    print(INCIDENTS_params['bbox'])
+
     IncidentsAPI.get_incidents(INCIDENTS_params)
 
     if IncidentsAPI.incidents:
-        print(len(IncidentsAPI.incidents))
-        with open('incidents.json', 'w') as f:
-            json.dump(IncidentsAPI.incidents_response.json(), f, indent=4)
+        data = IncidentsAPI.incidents_response.json()
+        with open(os.path.join(dir_path,"response.json") , "w") as outfile:
+            json.dump(data, outfile, indent=4)
+
