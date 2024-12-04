@@ -14,12 +14,16 @@ class Geocode():
         if response.status_code == 200:
             data = response.json()
             if data['results']:
-                if data['results'][0]['type'] == 'Geography':
-                    self.bbox = data['results'][0]['boundingBox']
-                    return self.bbox
-                else:
-                    print("No results found for the location.")
-                    return None
+                max_confidence_index = max(range(len(data['results'])), key=lambda i: data['results'][i]['matchConfidence']['score'])
+                while data['results'][max_confidence_index]['type'] != 'Geography':
+                    data['results'].pop(max_confidence_index)
+                    max_confidence_index = max(range(len(data['results'])), key=lambda i: data['results'][i]['matchConfidence']['score'])
+                    if not data['results']:
+                        print("No results found for the location.")
+                        return None
+                self.bbox = data['results'][max_confidence_index]['boundingBox']
+                return self.bbox
+            
             else:
                 print("No results found for the location.")
                 return None
