@@ -7,7 +7,7 @@ import logging
 import time
 from datetime import datetime
 from dotenv import load_dotenv
-from utils import Geocode, TrafficIncidents
+from TomTom_APIs import Geocode, TrafficIncidents
 
 import csv
 
