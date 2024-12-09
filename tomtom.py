@@ -14,9 +14,12 @@ import csv
 import schedule
 logging.basicConfig(
     filename='tomtom.log',
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
+
+console = logging.StreamHandler()
+console.setLevel(logging.INFO)
 
 load_dotenv()
 API_KEY = os.getenv('TOMTOM_API_KEY')
