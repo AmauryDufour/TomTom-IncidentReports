@@ -1,6 +1,5 @@
 import os
 import json
-import sqlite3
 import logging
 import time
 from datetime import datetime
@@ -8,13 +7,15 @@ from dotenv import load_dotenv
 from TomTom_APIs import Geocode, TrafficIncidents
 
 import csv
-
 import schedule
 
+# Global variable to hold the current JSON Lines file path
+current_jsonl_file = None
 
+# Updated Logging Configuration with Line Numbers
 logging.basicConfig(
     level=logging.DEBUG,
-    format="%(asctime)s [%(levelname)s] %(message)s",
+    format="%(asctime)s [%(levelname)s] %(filename)s:%(lineno)d %(message)s",
     handlers=[
         logging.FileHandler("tomtom.log"),
     ]
@@ -22,7 +23,7 @@ logging.basicConfig(
 
 console = logging.StreamHandler()
 console.setLevel(logging.INFO)
-console.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+console.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(filename)s:%(lineno)d %(message)s"))
 logging.getLogger().addHandler(console)
 
 load_dotenv()
@@ -45,7 +46,20 @@ GEOCODING_params = {
     'key': API_KEY,
 }
 
-def fetch_and_process(INCIDENTS_params, dir_path, csv_file):
+def rotate_jsonl_file(dir_path):
+    """
+    Determines the current 12-hour window and updates the global JSON Lines file path.
+    Schedules the next rotation at the next 12-hour boundary.
+    """
+    global current_jsonl_file
+    now = datetime.now()
+    date_str = now.strftime("%Y%m%d")
+    time_period = 0 if now.hour < 12 else 12
+    file_name = f"incidents_{date_str}_{time_period}.jsonl"
+    current_jsonl_file = os.path.join(dir_path, file_name)
+    logging.info(f"Switched to new JSON Lines file: {current_jsonl_file}")
+
+def fetch_and_process(INCIDENTS_params, csv_file):
     try:
         logging.info("Starting fetch for incidents.")
         
@@ -53,14 +67,18 @@ def fetch_and_process(INCIDENTS_params, dir_path, csv_file):
         IncidentsAPI.get_incidents(INCIDENTS_params)
         
         if IncidentsAPI.incidents:
-            json_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            xslx_timestamp = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
-            data = IncidentsAPI.incidents_response.json()
-            json_file = os.path.join(dir_path, f"{json_timestamp}.json")
-            with open(json_file, "w") as outfile:
-                json.dump(data, outfile, indent=4)
-            logging.info(f"Incidents saved to {json_file}")
+            # Ensure current_jsonl_file is set
+            if current_jsonl_file is None:
+                logging.error("JSON Lines file is not initialized.")
+                return
+            
+            # Append incidents to the current JSON Lines file
+            with open(current_jsonl_file, "a") as jf:
+                for incident in IncidentsAPI.incidents:
+                    jf.write(json.dumps(incident) + "\n")
+            logging.info(f"Incidents appended to {current_jsonl_file}")
             
             # Analysis
             total_incidents = len(IncidentsAPI.incidents)
@@ -69,9 +87,9 @@ def fetch_and_process(INCIDENTS_params, dir_path, csv_file):
 
             # Incident Distribution by Type
             environmental_causes = 0
-            accidents_breakdowns = 0
-            jams = 0
+            human_car_breakdowns = 0
             planned_works_closures = 0
+            jams = 0
             unknown = 0
 
             for incident in IncidentsAPI.incidents:
@@ -79,9 +97,7 @@ def fetch_and_process(INCIDENTS_params, dir_path, csv_file):
                 if icon_category in [2, 3, 4, 5, 10, 11]:
                     environmental_causes += 1
                 elif icon_category in [1, 14]:
-                    accidents_breakdowns += 1
-                elif icon_category == 0:
-                    unknown += 1
+                    human_car_breakdowns += 1
                 elif icon_category == 6:
                     jams += 1
                 else:
@@ -90,48 +106,43 @@ def fetch_and_process(INCIDENTS_params, dir_path, csv_file):
             with open(csv_file, 'a', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow([
-                    xslx_timestamp, 
+                    timestamp, 
                     total_incidents, 
                     incidents_with_delay, 
                     round(average_delay, 2),
                     environmental_causes,
-                    accidents_breakdowns,
-                    planned_works_closures,
-                    jams, 
-                    unknown
+                    human_car_breakdowns,
+                    jams,
+                    planned_works_closures
                 ])
-
-            logging.info(f"Report logged to {csv_file}")
+            logging.info(f"Analysis logged to {csv_file}")
         else:
             logging.info("No incidents found.")
     
     except Exception as e:
-        logging.error(f"An error occurred: {e}")
+        logging.error("An error occurred while fetching and processing incidents.", exc_info=True)
 
 if __name__ == "__main__":
-
     location = "Singapore"
-    logging.info(f"Location set: {location}")
-    dir_path = f"{location}_Incidents"
+    dir_path = f"{location}_TrafficIncidents_jsonl"
     os.makedirs(dir_path, exist_ok=True)
-    logging.info(f"Directory created: {dir_path}")
+    
     csv_file = os.path.join(dir_path, 'report.csv')
     if not os.path.exists(csv_file):
-        logging.info(f"Creating report CSV file: {csv_file}")
         with open(csv_file, 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerow([
                 'Timestamp', 
-                'Total Incidents', 
-                'Incidents With Delay', 
-                'Average Delay',
-                'Environmental Causes',
-                'Accidents & Breakdowns',
-                'Planned Works & Closures',
+                'Total_Incidents', 
+                'Incidents_With_Delay', 
+                'Average_Delay',
+                'Environmental_Causes',
+                'Human_Car_Breakdowns',
                 'Jams',
-                'Unknown Causes'
+                'Planned_Works_Closures',
             ])
-
+        logging.info(f"Created CSV file with headers: {csv_file}")
+    
     Geocode_API = Geocode(GEOCODING_API_URLS)
     IncidentsAPI = TrafficIncidents(TRAFFIC_INCIDENTS_API_URLS)
     
@@ -147,10 +158,20 @@ if __name__ == "__main__":
         exit()
     logging.info("TomTom Incident Fetcher Started.")
 
-    fetch_and_process(INCIDENTS_params, dir_path, csv_file)  # Initial run
+    # Initialize the current JSON Lines file
+    rotate_jsonl_file(dir_path)
+    
+    # Schedule JSON Lines file rotations
+    schedule.every().day.at("00:00").do(rotate_jsonl_file, dir_path=dir_path)
+    schedule.every().day.at("12:00").do(rotate_jsonl_file, dir_path=dir_path)
+    logging.info("Scheduled JSON Lines file rotations at 00:00 and 12:00 daily.")
+    
+    # Initial run
+    fetch_and_process(INCIDENTS_params, csv_file)
 
-    # Schedule to run every minute
-    schedule.every(1).minutes.do(fetch_and_process, INCIDENTS_params, dir_path, csv_file)
+    # Schedule fetching and processing of incidents
+    schedule.every(1).minutes.do(fetch_and_process, INCIDENTS_params, csv_file)
+    
     while True:
         schedule.run_pending()
-        time.sleep(1)
+        time.sleep(1)  # Wait for 1 minute
