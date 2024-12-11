@@ -47,7 +47,7 @@ class csvReport:
     def __init__(self, 
                  dir_path, 
                  headers = ['Timestamp', 
-                            'Total Incidents', 
+                            'Current Incidents', 
                             'Incidents with Delay', 
                             'Total Delay',
                             'Average Delay',
@@ -150,7 +150,7 @@ class TrafficIncidentsDB:
     def insert_incident(self, incident):
         properties = incident['properties']
         incident_id = properties['id']
-        new_delay = properties.get('delay') or 0  # Treat None as 0
+        new_delay = properties.get('delay') or 0  # None as 0
         
         try:
             # Check existing delay
@@ -159,9 +159,9 @@ class TrafficIncidentsDB:
             row = cursor.fetchone()
             
             if row:
-                current_delay = row[0] or 0  # Treat None as 0
+                current_delay = row[0] or 0  # None as 0
                 if new_delay > current_delay:
-                    # Update row with new data if new delay is greater
+                    # Update row if new delay bigger
                     cursor.execute('''
                         INSERT OR REPLACE INTO incidents (
                             id, type, geometry_type, coordinates, magnitudeOfDelay, startTime,
@@ -247,6 +247,7 @@ class TrafficIncidentsDB:
         self.conn.commit()
         logging.info(f"{inserts} new incident(s) inserted of {changes} changes to DB (of {len(incidents)} current).")
         return changes, inserts
+    
     def close(self):
         self.conn.close()
 
@@ -292,13 +293,11 @@ if __name__ == "__main__":
         exit()
     logging.info("TomTom Incident Fetcher Started.")
 
-    # Initialize the SQLite DB file
+    # Initialize the SQLite DataBase
     db = TrafficIncidentsDB(dir_path)
 
+    # Initialize the report
     report = csvReport(dir_path)
-    
-    # Initial run
-    fetch_and_process(INCIDENTS_params, report, db)
 
     # Schedule fetching and processing of incidents
     schedule.every(1).minutes.at(':30').do(fetch_and_process, INCIDENTS_params, report, db)
