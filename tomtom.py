@@ -43,52 +43,92 @@ GEOCODING_params = {
     'key': API_KEY,
 }
 
-def initialize_db(dir_path):
-    global conn
-    db_name = f"TrafficIncidents.db"
-    db_path = os.path.join(dir_path, db_name)
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS incidents (
-            id TEXT PRIMARY KEY,
-            type TEXT,
-            geometry_type TEXT,
-            coordinates TEXT,
-            magnitudeOfDelay REAL,
-            startTime TEXT,
-            endTime TEXT,
-            from_location TEXT,
-            to_location TEXT,
-            length REAL,
-            delay REAL,
-            roadNumbers TEXT,
-            timeValidity TEXT,
-            probabilityOfOccurrence TEXT,
-            numberOfReports INTEGER,
-            lastReportTime TEXT,
-            countryCode TEXT,
-            tableNumber INTEGER,
-            tableVersion INTEGER,
-            direction TEXT
-        )
-    ''')
-    conn.commit()
+class TrafficIncidentsDB:
+    def __init__(self, dir_path):
+        self.db_path = os.path.join(dir_path, "TrafficIncidents.db")
+        self.conn = sqlite3.connect(self.db_path)
+        self.initialize_db()
 
-def insert_incident(conn, incident):
-    properties = incident['properties']
-    incident_id = properties['id']
-    new_delay = properties.get('delay') or 0  # Treat None as 0
-    
-    try:
-        # Check existing delay
-        cursor = conn.cursor()
-        cursor.execute('SELECT delay FROM incidents WHERE id = ?', (incident_id,))
-        row = cursor.fetchone()
+    def initialize_db(self):
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS incidents (
+                id TEXT PRIMARY KEY,
+                type TEXT,
+                geometry_type TEXT,
+                coordinates TEXT,
+                magnitudeOfDelay REAL,
+                startTime TEXT,
+                endTime TEXT,
+                from_location TEXT,
+                to_location TEXT,
+                length REAL,
+                delay REAL,
+                roadNumbers TEXT,
+                timeValidity TEXT,
+                probabilityOfOccurrence TEXT,
+                numberOfReports INTEGER,
+                lastReportTime TEXT,
+                countryCode TEXT,
+                tableNumber INTEGER,
+                tableVersion INTEGER,
+                direction TEXT
+            )
+        ''')
+        self.conn.commit()
+
+    def insert_incident(self, incident):
+        properties = incident['properties']
+        incident_id = properties['id']
+        new_delay = properties.get('delay') or 0  # Treat None as 0
         
-        if row:
-            if new_delay > row[0] :
-                # Update row with new data if new delay is greater
+        try:
+            # Check existing delay
+            cursor = self.conn.cursor()
+            cursor.execute('SELECT delay FROM incidents WHERE id = ?', (incident_id,))
+            row = cursor.fetchone()
+            
+            if row:
+                current_delay = row[0] or 0  # Treat None as 0
+                if new_delay > current_delay:
+                    # Update row with new data if new delay is greater
+                    cursor.execute('''
+                        INSERT OR REPLACE INTO incidents (
+                            id, type, geometry_type, coordinates, magnitudeOfDelay, startTime,
+                            endTime, from_location, to_location, length, delay, roadNumbers,
+                            timeValidity, probabilityOfOccurrence, numberOfReports, lastReportTime,
+                            countryCode, tableNumber, tableVersion, direction
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        incident_id,
+                        incident['type'],
+                        incident['geometry']['type'],
+                        json.dumps(incident['geometry']['coordinates']),
+                        properties.get('magnitudeOfDelay', 0),
+                        properties.get('startTime'),
+                        properties.get('endTime'),
+                        properties.get('from'),
+                        properties.get('to'),
+                        properties.get('length'),
+                        new_delay,
+                        ','.join(properties.get('roadNumbers', [])),
+                        properties.get('timeValidity'),
+                        properties.get('probabilityOfOccurrence'),
+                        properties.get('numberOfReports', 0),
+                        properties.get('lastReportTime'),
+                        properties['tmc'].get('countryCode') if properties.get('tmc') else None,
+                        properties['tmc'].get('tableNumber') if properties.get('tmc') else None,
+                        properties['tmc'].get('tableVersion') if properties.get('tmc') else None,
+                        properties['tmc'].get('direction') if properties.get('tmc') else None
+                    ))
+                    self.conn.commit()
+                    logging.info(f"Updated incident ID: {incident_id} with new delay: {new_delay}")
+                    return True
+                else:
+                    logging.info(f"Incident ID: {incident_id} not updated. Existing delay: {current_delay}, New delay: {new_delay}")
+                    return False
+            else:
+                # Insert new row if incident does not exist
                 cursor.execute('''
                     INSERT OR REPLACE INTO incidents (
                         id, type, geometry_type, coordinates, magnitudeOfDelay, startTime,
@@ -118,50 +158,20 @@ def insert_incident(conn, incident):
                     properties['tmc'].get('tableVersion') if properties.get('tmc') else None,
                     properties['tmc'].get('direction') if properties.get('tmc') else None
                 ))
-                conn.commit()
-                return True, False
-            else: return False, False
-        else:
-            # Insert new row if incident does not exist
-            cursor.execute('''
-                INSERT OR REPLACE INTO incidents (
-                    id, type, geometry_type, coordinates, magnitudeOfDelay, startTime,
-                    endTime, from_location, to_location, length, delay, roadNumbers,
-                    timeValidity, probabilityOfOccurrence, numberOfReports, lastReportTime,
-                    countryCode, tableNumber, tableVersion, direction
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                incident_id,
-                incident['type'],
-                incident['geometry']['type'],
-                json.dumps(incident['geometry']['coordinates']),
-                properties.get('magnitudeOfDelay', 0),
-                properties.get('startTime'),
-                properties.get('endTime'),
-                properties.get('from'),
-                properties.get('to'),
-                properties.get('length'),
-                new_delay,
-                ','.join(properties.get('roadNumbers', [])),
-                properties.get('timeValidity'),
-                properties.get('probabilityOfOccurrence'),
-                properties.get('numberOfReports', 0),
-                properties.get('lastReportTime'),
-                properties['tmc'].get('countryCode') if properties.get('tmc') else None,
-                properties['tmc'].get('tableNumber') if properties.get('tmc') else None,
-                properties['tmc'].get('tableVersion') if properties.get('tmc') else None,
-                properties['tmc'].get('direction') if properties.get('tmc') else None
-            ))
-            conn.commit()
-            return True, True
-    except sqlite3.IntegrityError as e:
-        logging.error(f"SQLite IntegrityError: {e}", exc_info=True)
-        return False, False
-    except Exception as e:
-        logging.error(f"Unexpected error: {e}", exc_info=True)
-        return False, False
+                self.conn.commit()
+                logging.info(f"Inserted new incident ID: {incident_id} with delay: {new_delay}")
+                return True
+        except sqlite3.IntegrityError as e:
+            logging.error(f"SQLite IntegrityError: {e}", exc_info=True)
+            return False
+        except Exception as e:
+            logging.error(f"Unexpected error: {e}", exc_info=True)
+            return False
 
-def fetch_and_process(INCIDENTS_params, csv_file):
+    def close(self):
+        self.conn.close()
+
+def fetch_and_process(INCIDENTS_params, csv_file, db):
     try:
         logging.info("Starting fetch for incidents.")
         
@@ -175,17 +185,18 @@ def fetch_and_process(INCIDENTS_params, csv_file):
             changes = 0
             inserts = 0
             for incident in IncidentsAPI.incidents:
-                changed, inserted_new = insert_incident(conn, incident)
-                if changed : changes += 1
-                if inserted_new : inserts += 1
-            conn.commit()
+                changed = db.insert_incident(incident)
+                if changed:
+                    changes += 1
+                    inserts += 1
+            db.conn.commit()
             total_incidents = len(IncidentsAPI.incidents)
             logging.info(f"{inserts} new incident(s) inserted of {changes} changes to DB (of {total_incidents} current).")
             
             # Analysis
-            incidents_with_delay = sum(1 for incident in IncidentsAPI.incidents if incident['properties'].get('magnitudeOfDelay', 0) > 0)
-            total_delay = sum(incident['properties'].get('delay') or 0 for incident in IncidentsAPI.incidents)
-
+            incidents_with_delay = sum(1 for incident in IncidentsAPI.incidents if incident['properties'].get('delay', 0) or 0 > 0)
+            total_delay = sum(incident['properties'].get('delay', 0) or 0 for incident in IncidentsAPI.incidents)
+            
             # Incident Distribution by Type
             environmental_causes = 0
             human_car_breakdowns = 0
@@ -266,13 +277,13 @@ if __name__ == "__main__":
     logging.info("TomTom Incident Fetcher Started.")
 
     # Initialize the SQLite DB file
-    initialize_db(dir_path)
+    db = TrafficIncidentsDB(dir_path)
     
     # Initial run
-    fetch_and_process(INCIDENTS_params, csv_file)
+    fetch_and_process(INCIDENTS_params, csv_file, db)
 
     # Schedule fetching and processing of incidents
-    schedule.every(1).minutes.at(':30').do(fetch_and_process, INCIDENTS_params, csv_file)
+    schedule.every(1).minutes.at(':30').do(fetch_and_process, INCIDENTS_params, csv_file, db)
     
     while True:
         schedule.run_pending()
