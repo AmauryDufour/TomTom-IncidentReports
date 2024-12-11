@@ -8,6 +8,7 @@ from TomTom_APIs import Geocode, TrafficIncidents
 
 import csv
 import schedule
+import sqlite3
 
 # Global variable to hold the current JSON Lines file path
 current_jsonl_file = None
@@ -46,18 +47,72 @@ GEOCODING_params = {
     'key': API_KEY,
 }
 
-def rotate_jsonl_file(dir_path):
-    """
-    Determines the current 12-hour window and updates the global JSON Lines file path.
-    Schedules the next rotation at the next 12-hour boundary.
-    """
-    global current_jsonl_file
-    now = datetime.now()
-    date_str = now.strftime("%Y%m%d")
-    time_period = 0 if now.hour < 12 else 12
-    file_name = f"incidents_{date_str}_{time_period}.jsonl"
-    current_jsonl_file = os.path.join(dir_path, file_name)
-    logging.info(f"Switched to new JSON Lines file: {current_jsonl_file}")
+def initialize_db(dir_path):
+    global conn
+    db_name = f"TrafficIncidents.db"
+    db_path = os.path.join(dir_path, db_name)
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS incidents (
+            id TEXT PRIMARY KEY,
+            type TEXT,
+            geometry_type TEXT,
+            coordinates TEXT,
+            magnitudeOfDelay REAL,
+            startTime TEXT,
+            endTime TEXT,
+            from_location TEXT,
+            to_location TEXT,
+            length REAL,
+            delay REAL,
+            roadNumbers TEXT,
+            timeValidity TEXT,
+            probabilityOfOccurrence TEXT,
+            numberOfReports INTEGER,
+            lastReportTime TEXT,
+            countryCode TEXT,
+            tableNumber INTEGER,
+            tableVersion INTEGER,
+            direction TEXT
+        )
+    ''')
+    conn.commit()
+
+def insert_incident(conn, incident):
+    properties = incident['properties']
+    try:
+        conn.execute('''
+            INSERT OR REPLACE INTO incidents (
+                id, type, geometry_type, coordinates, magnitudeOfDelay, startTime,
+                endTime, from_location, to_location, length, delay, roadNumbers,
+                timeValidity, probabilityOfOccurrence, numberOfReports, lastReportTime,
+                countryCode, tableNumber, tableVersion, direction
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            properties['id'],
+            incident['type'],
+            incident['geometry']['type'],
+            json.dumps(incident['geometry']['coordinates']),
+            properties.get('magnitudeOfDelay', 0),
+            properties.get('startTime'),
+            properties.get('endTime'),
+            properties.get('from'),
+            properties.get('to'),
+            properties.get('length'),
+            properties.get('delay'),
+            ','.join(properties.get('roadNumbers', [])),
+            properties.get('timeValidity'),
+            properties.get('probabilityOfOccurrence'),
+            properties.get('numberOfReports', 0),
+            properties.get('lastReportTime'),
+            properties['tmc'].get(['countryCode']) if properties['tmc'] is not None else None,
+            properties['tmc'].get(['tableNumber']) if properties['tmc'] is not None else None,
+            properties['tmc'].get(['tableVersion']) if properties['tmc'] is not None else None,
+            properties['tmc'].get(['direction']) if properties['tmc'] is not None else None
+        ))
+    except sqlite3.IntegrityError as e:
+        logging.error(f"SQLite IntegrityError: {e}", exc_info=True)
 
 def fetch_and_process(INCIDENTS_params, csv_file):
     try:
@@ -69,16 +124,11 @@ def fetch_and_process(INCIDENTS_params, csv_file):
         if IncidentsAPI.incidents:
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
-            # Ensure current_jsonl_file is set
-            if current_jsonl_file is None:
-                logging.error("JSON Lines file is not initialized.")
-                return
-            
             # Append incidents to the current JSON Lines file
-            with open(current_jsonl_file, "a") as jf:
-                for incident in IncidentsAPI.incidents:
-                    jf.write(json.dumps(incident) + "\n")
-            logging.info(f"Incidents appended to {current_jsonl_file}")
+            for incident in IncidentsAPI.incidents:
+                insert_incident(conn, incident)
+            conn.commit()
+            logging.info("Incidents inserted into SQLite DB.")
             
             # Analysis
             total_incidents = len(IncidentsAPI.incidents)
@@ -100,8 +150,10 @@ def fetch_and_process(INCIDENTS_params, csv_file):
                     human_car_breakdowns += 1
                 elif icon_category == 6:
                     jams += 1
-                else:
+                elif icon_category in [7, 8, 9]: 
                     planned_works_closures += 1
+                else :
+                    unknown += 1
 
             with open(csv_file, 'a', newline='') as f:
                 writer = csv.writer(f)
@@ -113,7 +165,8 @@ def fetch_and_process(INCIDENTS_params, csv_file):
                     environmental_causes,
                     human_car_breakdowns,
                     jams,
-                    planned_works_closures
+                    planned_works_closures,
+                    unknown
                 ])
             logging.info(f"Analysis logged to {csv_file}")
         else:
@@ -124,7 +177,7 @@ def fetch_and_process(INCIDENTS_params, csv_file):
 
 if __name__ == "__main__":
     location = "Singapore"
-    dir_path = f"{location}_TrafficIncidents_jsonl"
+    dir_path = f"{location}_TrafficIncidents"
     os.makedirs(dir_path, exist_ok=True)
     
     csv_file = os.path.join(dir_path, 'report.csv')
@@ -140,6 +193,7 @@ if __name__ == "__main__":
                 'Human_Car_Breakdowns',
                 'Jams',
                 'Planned_Works_Closures',
+                'Unknown Causes'
             ])
         logging.info(f"Created CSV file with headers: {csv_file}")
     
@@ -158,13 +212,8 @@ if __name__ == "__main__":
         exit()
     logging.info("TomTom Incident Fetcher Started.")
 
-    # Initialize the current JSON Lines file
-    rotate_jsonl_file(dir_path)
-    
-    # Schedule JSON Lines file rotations
-    schedule.every().day.at("00:00").do(rotate_jsonl_file, dir_path=dir_path)
-    schedule.every().day.at("12:00").do(rotate_jsonl_file, dir_path=dir_path)
-    logging.info("Scheduled JSON Lines file rotations at 00:00 and 12:00 daily.")
+    # Initialize the first SQLite DB file
+    initialize_db(dir_path)
     
     # Initial run
     fetch_and_process(INCIDENTS_params, csv_file)
