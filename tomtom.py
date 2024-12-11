@@ -10,10 +10,6 @@ import csv
 import schedule
 import sqlite3
 
-# Global variable to hold the current JSON Lines file path
-current_jsonl_file = None
-
-# Updated Logging Configuration with Line Numbers
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s [%(levelname)s] %(filename)s:%(lineno)d %(message)s",
@@ -133,7 +129,10 @@ def fetch_and_process(INCIDENTS_params, csv_file):
             # Analysis
             total_incidents = len(IncidentsAPI.incidents)
             incidents_with_delay = sum(1 for incident in IncidentsAPI.incidents if incident['properties'].get('magnitudeOfDelay', 0) > 0)
-            average_delay = sum(incident['properties'].get('magnitudeOfDelay', 0) for incident in IncidentsAPI.incidents) / total_incidents if total_incidents > 0 else 0
+            if total_incidents > 0:
+                average_delay = sum(incident['properties']['delay'] if incident['properties']['delay'] is not None else 0 for incident in IncidentsAPI.incidents) / total_incidents
+            else:
+                average_delay = 0
 
             # Incident Distribution by Type
             environmental_causes = 0
@@ -223,4 +222,4 @@ if __name__ == "__main__":
     
     while True:
         schedule.run_pending()
-        time.sleep(1)  # Wait for 1 minute
+        time.sleep(1)
