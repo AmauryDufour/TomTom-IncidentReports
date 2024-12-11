@@ -1,5 +1,3 @@
-# Python: Fetch TomTom Traffic Incidents, store in JSON, perform analysis, and log to CSV
-
 import os
 import json
 import sqlite3
@@ -12,14 +10,20 @@ from TomTom_APIs import Geocode, TrafficIncidents
 import csv
 
 import schedule
+
+
 logging.basicConfig(
-    filename='tomtom.log',
     level=logging.DEBUG,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler("tomtom.log"),
+    ]
 )
 
 console = logging.StreamHandler()
 console.setLevel(logging.INFO)
+console.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+logging.getLogger().addHandler(console)
 
 load_dotenv()
 API_KEY = os.getenv('TOMTOM_API_KEY')
@@ -107,11 +111,13 @@ def fetch_and_process(INCIDENTS_params, dir_path, csv_file):
 if __name__ == "__main__":
 
     location = "Singapore"
+    logging.info(f"Location set: {location}")
     dir_path = f"{location}_Incidents"
     os.makedirs(dir_path, exist_ok=True)
-
+    logging.info(f"Directory created: {dir_path}")
     csv_file = os.path.join(dir_path, 'report.csv')
     if not os.path.exists(csv_file):
+        logging.info(f"Creating report CSV file: {csv_file}")
         with open(csv_file, 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerow([
@@ -130,6 +136,7 @@ if __name__ == "__main__":
     IncidentsAPI = TrafficIncidents(TRAFFIC_INCIDENTS_API_URLS)
     
     # Get and reformat bounding box
+    logging.info("Fetching Bounding Box.")
     bbox = Geocode_API.get_bbox(GEOCODING_params, location)
     if bbox:
         reformatted_bbox = Geocode_API.reformatbbox(bbox)
