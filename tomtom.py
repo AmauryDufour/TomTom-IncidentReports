@@ -43,6 +43,76 @@ GEOCODING_params = {
     'key': API_KEY,
 }
 
+class csvReport:
+    def __init__(self, 
+                 dir_path, 
+                 headers = ['Timestamp', 
+                            'Total Incidents', 
+                            'Incidents with Delay', 
+                            'Total Delay',
+                            'Average Delay',
+                            'Environmental Causes',
+                            'Human Car Breakdowns',
+                            'Jams',
+                            'Planned Works Closures',
+                            'Unknown Causes',
+                            'Changes', 
+                            'New Incidents']):
+        self.dir_path = dir_path
+        self.headers = headers
+        self.csv_path = os.path.join(self.dir_path, 'report.csv')
+        if not os.path.exists(self.csv_path):
+            with open(self.csv_path, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(self.headers)
+            logging.info(f"Created CSV file with headers: {self.csv_path}")
+
+    def analyse_commit(self, incidents, changes, inserts):
+            # Analysis
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            total_incidents = len(incidents)
+            incidents_with_delay = sum(1 for incident in incidents if incident['properties'].get('delay', 0) or 0 > 0)
+            total_delay = sum(incident['properties'].get('delay', 0) or 0 for incident in incidents)
+            average_delay = total_delay / incidents_with_delay
+
+            # Incident Distribution by Type
+            environmental_causes = 0
+            human_car_breakdowns = 0
+            planned_works_closures = 0
+            jams = 0
+            unknown = 0
+
+            for incident in incidents:
+                icon_category = incident['properties'].get('iconCategory', 0)
+                if icon_category in [2, 3, 4, 5, 10, 11]:
+                    environmental_causes += 1
+                elif icon_category in [1, 14]:
+                    human_car_breakdowns += 1
+                elif icon_category == 6:
+                    jams += 1
+                elif icon_category in [7, 8, 9]: 
+                    planned_works_closures += 1
+                else :
+                    unknown += 1
+
+            with open(self.csv_path, 'a', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    timestamp, 
+                    total_incidents, 
+                    incidents_with_delay, 
+                    total_delay,
+                    average_delay,
+                    environmental_causes,
+                    human_car_breakdowns,
+                    jams,
+                    planned_works_closures,
+                    unknown,
+                    changes,
+                    inserts
+                ])
+            logging.info(f"Stats logged to {self.csv_path}")
+
 class TrafficIncidentsDB:
     def __init__(self, dir_path):
         self.db_path = os.path.join(dir_path, "TrafficIncidents.db")
@@ -122,11 +192,9 @@ class TrafficIncidentsDB:
                         properties['tmc'].get('direction') if properties.get('tmc') else None
                     ))
                     self.conn.commit()
-                    logging.info(f"Updated incident ID: {incident_id} with new delay: {new_delay}")
-                    return True
+                    return True, False
                 else:
-                    logging.info(f"Incident ID: {incident_id} not updated. Existing delay: {current_delay}, New delay: {new_delay}")
-                    return False
+                    return False, False
             else:
                 # Insert new row if incident does not exist
                 cursor.execute('''
@@ -159,15 +227,26 @@ class TrafficIncidentsDB:
                     properties['tmc'].get('direction') if properties.get('tmc') else None
                 ))
                 self.conn.commit()
-                logging.info(f"Inserted new incident ID: {incident_id} with delay: {new_delay}")
-                return True
+                return True, True
         except sqlite3.IntegrityError as e:
             logging.error(f"SQLite IntegrityError: {e}", exc_info=True)
-            return False
+            return False, False
         except Exception as e:
             logging.error(f"Unexpected error: {e}", exc_info=True)
-            return False
+            return False, False
 
+    def update_incidents(self, incidents):
+        changes = 0
+        inserts = 0
+        for incident in incidents:
+            changed, inserted = self.insert_incident(incident)
+            if changed:
+                changes += 1
+            if inserted:
+                inserts += 1
+        self.conn.commit()
+        logging.info(f"{inserts} new incident(s) inserted of {changes} changes to DB (of {len(incidents)} current).")
+        return changes, inserts
     def close(self):
         self.conn.close()
 
@@ -179,59 +258,13 @@ def fetch_and_process(INCIDENTS_params, csv_file, db):
         IncidentsAPI.get_incidents(INCIDENTS_params)
         
         if IncidentsAPI.incidents:
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
-            # Append incidents to the current JSON Lines file
-            changes = 0
-            inserts = 0
-            for incident in IncidentsAPI.incidents:
-                changed = db.insert_incident(incident)
-                if changed:
-                    changes += 1
-                    inserts += 1
-            db.conn.commit()
-            total_incidents = len(IncidentsAPI.incidents)
-            logging.info(f"{inserts} new incident(s) inserted of {changes} changes to DB (of {total_incidents} current).")
-            
+            # Append new incidents to the db and update those that have changed
+            changes, inserts = db.update_incidents(IncidentsAPI.incidents)
+
             # Analysis
-            incidents_with_delay = sum(1 for incident in IncidentsAPI.incidents if incident['properties'].get('delay', 0) or 0 > 0)
-            total_delay = sum(incident['properties'].get('delay', 0) or 0 for incident in IncidentsAPI.incidents)
+            csv_file.analyse_commit(IncidentsAPI.incidents, changes, inserts) 
             
-            # Incident Distribution by Type
-            environmental_causes = 0
-            human_car_breakdowns = 0
-            planned_works_closures = 0
-            jams = 0
-            unknown = 0
-
-            for incident in IncidentsAPI.incidents:
-                icon_category = incident['properties'].get('iconCategory', 0)
-                if icon_category in [2, 3, 4, 5, 10, 11]:
-                    environmental_causes += 1
-                elif icon_category in [1, 14]:
-                    human_car_breakdowns += 1
-                elif icon_category == 6:
-                    jams += 1
-                elif icon_category in [7, 8, 9]: 
-                    planned_works_closures += 1
-                else :
-                    unknown += 1
-
-            with open(csv_file, 'a', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow([
-                    timestamp, 
-                    total_incidents, 
-                    incidents_with_delay, 
-                    total_delay,
-                    environmental_causes,
-                    human_car_breakdowns,
-                    jams,
-                    planned_works_closures,
-                    unknown,
-                    changes
-                ])
-            logging.info(f"Stats logged to {csv_file}")
         else:
             logging.info("No incidents found.")
     
@@ -243,27 +276,10 @@ if __name__ == "__main__":
     dir_path = f"{location}_TrafficIncidents"
     os.makedirs(dir_path, exist_ok=True)
     
-    csv_file = os.path.join(dir_path, 'report.csv')
-    if not os.path.exists(csv_file):
-        with open(csv_file, 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow([
-                'Timestamp', 
-                'Total Incidents', 
-                'Incidents with Delay', 
-                'Total Delay',
-                'Environmental Causes',
-                'Human Car Breakdowns',
-                'Jams',
-                'Planned Works Closures',
-                'Unknown Causes',
-                '# Changes'
-            ])
-        logging.info(f"Created CSV file with headers: {csv_file}")
-    
     Geocode_API = Geocode(GEOCODING_API_URLS)
     IncidentsAPI = TrafficIncidents(TRAFFIC_INCIDENTS_API_URLS)
     
+
     # Get and reformat bounding box
     logging.info("Fetching Bounding Box.")
     bbox = Geocode_API.get_bbox(GEOCODING_params, location)
@@ -278,12 +294,14 @@ if __name__ == "__main__":
 
     # Initialize the SQLite DB file
     db = TrafficIncidentsDB(dir_path)
+
+    report = csvReport(dir_path)
     
     # Initial run
-    fetch_and_process(INCIDENTS_params, csv_file, db)
+    fetch_and_process(INCIDENTS_params, report, db)
 
     # Schedule fetching and processing of incidents
-    schedule.every(1).minutes.at(':30').do(fetch_and_process, INCIDENTS_params, csv_file, db)
+    schedule.every(1).minutes.at(':30').do(fetch_and_process, INCIDENTS_params, report, db)
     
     while True:
         schedule.run_pending()
