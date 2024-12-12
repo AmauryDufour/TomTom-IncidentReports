@@ -163,3 +163,4 @@ cython_debug/
 
 **/*_TrafficIncidents/
 /Singapore_TrafficIncidents_jsonl/
+**.geojson
