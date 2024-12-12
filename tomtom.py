@@ -118,6 +118,7 @@ class TrafficIncidentsDB:
         self.db_path = os.path.join(dir_path, "TrafficIncidents.db")
         self.conn = sqlite3.connect(self.db_path)
         self.initialize_db()
+        logging.info(f"Connection to {self.db_path} database established")
 
     def initialize_db(self):
         cursor = self.conn.cursor()
@@ -125,6 +126,7 @@ class TrafficIncidentsDB:
             CREATE TABLE IF NOT EXISTS incidents (
                 id TEXT PRIMARY KEY,
                 type TEXT,
+                category TEXT,
                 geometry_type TEXT,
                 coordinates TEXT,
                 magnitudeOfDelay REAL,
@@ -164,14 +166,15 @@ class TrafficIncidentsDB:
                     # Update row if new delay bigger
                     cursor.execute('''
                         INSERT OR REPLACE INTO incidents (
-                            id, type, geometry_type, coordinates, magnitudeOfDelay, startTime,
+                            id, type, category, geometry_type, coordinates, magnitudeOfDelay, startTime,
                             endTime, from_location, to_location, length, delay, roadNumbers,
                             timeValidity, probabilityOfOccurrence, numberOfReports, lastReportTime,
                             countryCode, tableNumber, tableVersion, direction
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (
                         incident_id,
                         incident['type'],
+                        properties.get('iconCategory', 0),
                         incident['geometry']['type'],
                         json.dumps(incident['geometry']['coordinates']),
                         properties.get('magnitudeOfDelay', 0),
@@ -199,14 +202,15 @@ class TrafficIncidentsDB:
                 # Insert new row if incident does not exist
                 cursor.execute('''
                     INSERT OR REPLACE INTO incidents (
-                        id, type, geometry_type, coordinates, magnitudeOfDelay, startTime,
-                        endTime, from_location, to_location, length, delay, roadNumbers,
-                        timeValidity, probabilityOfOccurrence, numberOfReports, lastReportTime,
-                        countryCode, tableNumber, tableVersion, direction
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (
+                            id, type, category, geometry_type, coordinates, magnitudeOfDelay, startTime,
+                            endTime, from_location, to_location, length, delay, roadNumbers,
+                            timeValidity, probabilityOfOccurrence, numberOfReports, lastReportTime,
+                            countryCode, tableNumber, tableVersion, direction 
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
                     incident_id,
                     incident['type'],
+                    properties.get('iconCategory', 0),
                     incident['geometry']['type'],
                     json.dumps(incident['geometry']['coordinates']),
                     properties.get('magnitudeOfDelay', 0),
@@ -279,7 +283,6 @@ if __name__ == "__main__":
     
     Geocode_API = Geocode(GEOCODING_API_URLS)
     IncidentsAPI = TrafficIncidents(TRAFFIC_INCIDENTS_API_URLS)
-    
 
     # Get and reformat bounding box
     logging.info("Fetching Bounding Box.")
