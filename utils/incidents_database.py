@@ -285,5 +285,21 @@ class TrafficIncidentsDB:
         except Exception as e:
             logging.error(f"Error exporting to GeoJSON: {e}", exc_info=True)
 
+    def get_earliest_and_latest_start_times(self):
+        """
+        Get the earliest and latest start times from the incidents.
+        """
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                SELECT MIN(startTime), MAX(startTime) FROM incidents
+            ''')
+            result = cursor.fetchone()
+            earliest_start_time, latest_start_time = result
+            return earliest_start_time, latest_start_time
+        except Exception as e:
+            logging.error(f"Error getting earliest and latest start times: {e}", exc_info=True)
+            return None, None
+        
     def close(self):
         self.conn.close()
