@@ -301,5 +301,15 @@ class TrafficIncidentsDB:
             logging.error(f"Error getting earliest and latest start times: {e}", exc_info=True)
             return None, None
         
+    def optimize(self):
+        try :
+            cursor = self.conn.cursor()
+            cursor.execute('''VACUUM''')
+            self.conn.commit()
+            logging.info("Database file rebuilt into minimal amount of disk space")
+        except Exception as e:
+            logging.error(f"Error rebuilding database: {e}")
+
+        
     def close(self):
         self.conn.close()
