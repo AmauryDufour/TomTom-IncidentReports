@@ -10,19 +10,17 @@ from dotenv import load_dotenv
 from TomTom_APIs import Geocode, TrafficIncidents
 from utils import TrafficIncidentsDB, csvReport
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(filename)s  - %(message)s")
+os.makedirs("logs", exist_ok=True)
+error_log = logging.FileHandler(os.path.join("logs","error_log.log"))
+error_log.setLevel(logging.WARNING)
+error_log.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(filename)s:%(lineno)d - %(message)s"))
+logging.getLogger().addHandler(error_log)
+debug_log = logging.FileHandler(os.path.join("logs","debug_log.log"))
+debug_log.setLevel(logging.DEBUG)
+debug_log.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(filename)s:%(lineno)d - %(message)s"))
+logging.getLogger().addHandler(debug_log)
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s [%(levelname)s] %(filename)s:%(lineno)d %(message)s",
-    handlers=[
-        logging.FileHandler("tomtom.log"),
-    ]
-)
-
-console = logging.StreamHandler()
-console.setLevel(logging.INFO)
-console.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(filename)s - %(message)s"))
-logging.getLogger().addHandler(console)
 
 load_dotenv()
 API_KEY = os.getenv('TOMTOM_API_KEY')
@@ -30,6 +28,7 @@ BASE_URL = os.getenv('BASE_URL')
 
 TRAFFIC_INCIDENTS_API_URLS = json.loads(os.getenv('TRAFFIC_INCIDENTS_API_URLS'))
 GEOCODING_API_URLS = json.loads(os.getenv('GEOCODING_API_URLS'))
+
 
 # Initialize Parameters
 INCIDENTS_params = {
@@ -94,6 +93,8 @@ if __name__ == "__main__":
     # Initialize the report
     report = csvReport(dir_path)
 
+    fetch_and_process(INCIDENTS_params=INCIDENTS_params, csv_file=report, database=db, threshold_minutes=5)
+    
     # Schedule fetching and processing of incidents
     schedule.every(40).seconds.do(fetch_and_process, INCIDENTS_params=INCIDENTS_params, csv_file=report, database=db, threshold_minutes=5)
     schedule.every(1).day.at('12:30:00').do(db.optimize)
