@@ -95,9 +95,9 @@ if __name__ == "__main__":
     report = csvReport(dir_path)
 
     # Schedule fetching and processing of incidents
-    schedule.every(1).minutes.at(':30').do(fetch_and_process, INCIDENTS_params=INCIDENTS_params, csv_file=report, database=db, threshold_minutes=5)
+    schedule.every(40).seconds.do(fetch_and_process, INCIDENTS_params=INCIDENTS_params, csv_file=report, database=db, threshold_minutes=5)
     schedule.every(1).day.at('12:30:00').do(db.optimize)
-    
+
     while True:
         schedule.run_pending()
         time.sleep(1)
