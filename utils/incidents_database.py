@@ -7,9 +7,9 @@ import sqlite3
 
 
 class TrafficIncidentsDB:
-    def __init__(self, dir_path, db_path = None):
+    def __init__(self, dir_path, db_path = None, location=None):
         self.dir_path = dir_path
-        if not db_path : self.db_path = os.path.join(self.dir_path, "TrafficIncidents.db")
+        if not db_path : self.db_path = os.path.join(self.dir_path, f"{location}_Incidents.db")
         else : self.db_path = db_path
         self.conn = sqlite3.connect(self.db_path)
         self.initialize_db()

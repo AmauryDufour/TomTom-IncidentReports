@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from TomTom_APIs import Geocode, TrafficIncidents
 from utils import TrafficIncidentsDB, csvReport
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(filename)s  - %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(filename)s - %(message)s")
 os.makedirs("logs", exist_ok=True)
 error_log = logging.FileHandler(os.path.join("logs","error_log.log"))
 error_log.setLevel(logging.WARNING)
@@ -76,25 +76,25 @@ if __name__ == "__main__":
     IncidentsAPI = TrafficIncidents(TRAFFIC_INCIDENTS_API_URLS)
 
     # Get and reformat bounding box
-    logging.info("Fetching Bounding Box.")
+    logging.info("Starting Geocoding.")
     bbox = Geocode_API.get_bbox(GEOCODING_params, location)
     if bbox:
         reformatted_bbox = Geocode_API.reformatbbox(bbox)
         INCIDENTS_params['bbox'] = reformatted_bbox
-        logging.info(f"Reformatted BBox: {reformatted_bbox}")
+        logging.info(f"Formatted BBox (min_lon,min_lat,max_lon,max_lat): ({reformatted_bbox})")
     else:
         logging.error("Failed to retrieve bounding box.")
         exit()
     logging.info("TomTom Incident Fetcher Started.")
 
     # Initialize the SQLite DataBase
-    db = TrafficIncidentsDB(dir_path)
+    db = TrafficIncidentsDB(dir_path, location=location)
 
     # Initialize the report
     report = csvReport(dir_path)
 
     fetch_and_process(INCIDENTS_params=INCIDENTS_params, csv_file=report, database=db, threshold_minutes=5)
-    
+
     # Schedule fetching and processing of incidents
     schedule.every(40).seconds.do(fetch_and_process, INCIDENTS_params=INCIDENTS_params, csv_file=report, database=db, threshold_minutes=5)
     schedule.every(1).day.at('12:30:00').do(db.optimize)
