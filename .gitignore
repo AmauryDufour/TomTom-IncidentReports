@@ -167,3 +167,4 @@ cython_debug/
 anim/
 **.gif
 **.mp4
+logs/
