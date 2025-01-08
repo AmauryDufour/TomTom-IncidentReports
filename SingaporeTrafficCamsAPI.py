@@ -15,6 +15,7 @@ if not logger.hasHandlers():
     formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(filename)s - %(message)s')
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
+    logger.propagate = False
 
 def fetch_and_save_images():
     """

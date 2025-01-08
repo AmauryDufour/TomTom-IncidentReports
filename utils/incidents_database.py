@@ -5,6 +5,17 @@ import geojson
 from datetime import datetime, timedelta, UTC
 import sqlite3
 
+# Define logger for module
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)  # Default logging level
+
+# If  logger has no handlers add console handler
+if not logger.hasHandlers():
+    console_handler = logging.StreamHandler()
+    formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(filename)s - %(message)s')
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+    logger.propagate = False
 
 class TrafficIncidentsDB:
     def __init__(self, dir_path, db_path = None, location=None):
@@ -12,8 +23,9 @@ class TrafficIncidentsDB:
         if not db_path : self.db_path = os.path.join(self.dir_path, f"{location}_Incidents.db")
         else : self.db_path = db_path
         self.conn = sqlite3.connect(self.db_path)
+        logger.info(f"Connection to {self.db_path} database established")
         self.initialize_db()
-        logging.info(f"Connection to {self.db_path} database established")
+        self.optimize()
 
     def initialize_db(self):
         cursor = self.conn.cursor()
@@ -44,6 +56,8 @@ class TrafficIncidentsDB:
             )
         ''')
         self.conn.commit()
+        logger.info(f"{self.db_path} database initialised and passed checks")
+        
 
     def insert_incident(self, incident):
         properties = incident['properties']
@@ -108,6 +122,7 @@ class TrafficIncidentsDB:
                         incident_id
                     ))
                     self.conn.commit()
+                    logger.debug(f"Updated incident {incident_id} with new delay and endTime.")
                     return True, False
                 else:
                     # Update last_seen even if delay isn't greater
@@ -120,6 +135,7 @@ class TrafficIncidentsDB:
                         incident_id
                     ))
                     self.conn.commit()
+                    logger.debug(f"Updated last_seen for incident {incident_id}.")
                     return False, False
             else:
                 # Insert new row if incident does not exist
@@ -155,12 +171,13 @@ class TrafficIncidentsDB:
                     current_time
                 ))
                 self.conn.commit()
+                logger.debug(f"Inserted new incident {incident_id} into the database.")
                 return True, True
         except sqlite3.IntegrityError as e:
-            logging.error(f"SQLite IntegrityError: {e}", exc_info=True)
+            logger.error(f"SQLite IntegrityError: {e}", exc_info=True)
             return False, False
         except Exception as e:
-            logging.error(f"Unexpected error: {e}", exc_info=True)
+            logger.error(f"Unexpected error: {e}", exc_info=True)
             return False, False
 
     def update_incidents(self, incidents):
@@ -172,7 +189,7 @@ class TrafficIncidentsDB:
                 changes += 1
             if inserted:
                 inserts += 1
-        logging.info(f"{inserts} new incident(s) inserted of {changes} changes to DB (of {len(incidents)} current).")
+        logger.info(f"{inserts} new incident(s) inserted of {changes} changes to DB (of {len(incidents)} current).")
         return changes, inserts
 
     def mark_ended_incidents(self, threshold_minutes=5):
@@ -211,10 +228,12 @@ class TrafficIncidentsDB:
                     SET endTime = ?
                     WHERE id = ?
                 ''', (end_time, incident_id))
+                logger.debug(f"Marked incident {incident_id} as ended.")
 
             self.conn.commit()
+            logger.info(f"Marked {len(ended_incidents)} incident(s) as ended.")
         except Exception as e:
-            logging.error(f"Error marking ended incidents: {e}", exc_info=True)
+            logger.error(f"Error marking ended incidents: {e}", exc_info=True)
 
     def export_to_geojson(self, start_datetime, end_datetime, output_file):
         try:
@@ -240,7 +259,7 @@ class TrafficIncidentsDB:
                 try:
                     coordinates = json.loads(coordinates)
                 except json.JSONDecodeError:
-                    logging.warning(f"Invalid coordinates for incident ID: {id_}")
+                    logger.warning(f"Invalid coordinates for incident ID: {id_}")
                     continue
 
                 # Define geometry
@@ -249,7 +268,7 @@ class TrafficIncidentsDB:
                 elif geometry_type == 'LineString':
                     geometry = geojson.LineString(coordinates)
                 else:
-                    logging.warning(f"Unsupported geometry type for incident ID: {id_}")
+                    logger.warning(f"Unsupported geometry type for incident ID: {id_}")
                     continue
 
                 # Define properties
@@ -281,9 +300,9 @@ class TrafficIncidentsDB:
             feature_collection = geojson.FeatureCollection(features)
             with open(output_file, 'w') as f:
                 geojson.dump(feature_collection, f)
-            logging.info(f"Exported {len(features)} incidents to GeoJSON: {output_file}")
+            logger.info(f"Exported {len(features)} incidents to GeoJSON: {output_file}")
         except Exception as e:
-            logging.error(f"Error exporting to GeoJSON: {e}", exc_info=True)
+            logger.error(f"Error exporting to GeoJSON: {e}", exc_info=True)
 
     def get_earliest_and_latest_start_times(self):
         """
@@ -298,7 +317,7 @@ class TrafficIncidentsDB:
             earliest_start_time, latest_start_time = result
             return earliest_start_time, latest_start_time
         except Exception as e:
-            logging.error(f"Error getting earliest and latest start times: {e}", exc_info=True)
+            logger.error(f"Error getting earliest and latest start times from database: {e}", exc_info=True)
             return None, None
         
     def optimize(self):
@@ -306,10 +325,12 @@ class TrafficIncidentsDB:
             cursor = self.conn.cursor()
             cursor.execute('''VACUUM''')
             self.conn.commit()
-            logging.info("Database file rebuilt into minimal amount of disk space")
+            logger.info("Database file rebuilt into minimal amount of disk space")
         except Exception as e:
-            logging.error(f"Error rebuilding database: {e}")
+            logger.error(f"Error rebuilding database: {e}")
 
         
     def close(self):
+        self.optimize()
         self.conn.close()
+        logger.info("Database connection closed.")

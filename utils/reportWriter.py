@@ -3,6 +3,18 @@ import logging
 import csv
 from datetime import datetime
 
+# Define logger for module
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)  # Default logging level
+
+# If  logger has no handlers add console handler
+if not logger.hasHandlers():
+    console_handler = logging.StreamHandler()
+    formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(filename)s - %(message)s')
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+    logger.propagate = False
+
 class csvReport:
     def __init__(self, 
                  dir_path, 
@@ -25,7 +37,7 @@ class csvReport:
             with open(self.csv_path, 'w', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow(self.headers)
-            logging.info(f"Created CSV file with headers: {self.csv_path}")
+            logger.info(f"Created CSV file with headers: {self.csv_path}")
 
     def analyse_commit(self, incidents, changes, inserts):
             # Analysis
@@ -71,4 +83,4 @@ class csvReport:
                     changes,
                     inserts
                 ])
-            logging.info(f"Stats logged to {self.csv_path}")
+            logger.info(f"Stats logged to {self.csv_path}")

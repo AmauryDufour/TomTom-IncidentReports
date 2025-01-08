@@ -3,15 +3,26 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from utils.incidents_database import TrafficIncidentsDB
 import os
-import json
 import logging
 from datetime import datetime, timezone
+
+# Define logger for module
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)  # Default logging level
+
+# If  logger has no handlers add console handler
+if not logger.hasHandlers():
+    console_handler = logging.StreamHandler()
+    formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(filename)s - %(message)s')
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+    logger.propagate = False
 
 dir_path = r"C:\Users\adufour\OneDrive - SystraGroup\Documents\TomTom\TomTom-IncidentReports\Singapore_TrafficIncidents"
 db_path = r"C:\Users\adufour\OneDrive - SystraGroup\Documents\TomTom\TomTom-IncidentReports\Singapore_TrafficIncidents\Singapore_Incidents.db"
 location = "Singapore" 
-start_time = datetime.fromisoformat('2024-12-18T20:31:55+07:00')
-end_time = datetime.fromisoformat('2024-12-27T18:03:18+07:00')
+start_time = datetime.fromisoformat('2024-12-18T20:35+07:00')
+end_time = datetime.fromisoformat('2024-12-27T18:00:00+07:00')
 
 db = TrafficIncidentsDB(dir_path=dir_path, db_path=db_path, location=location)
 db.optimize()
@@ -47,7 +58,6 @@ df['endTime'] = pd.to_datetime(df['endTime'], format='mixed')
 
 current_time = datetime.now(timezone.utc)
 df.fillna({'endTime': current_time}, inplace=True)
-
 
 # Define the mapping
 icon_map_dict = {
@@ -104,10 +114,10 @@ merged_df['Total_Incidents'] = cause_counts[causes].sum(axis=1)
 
 sns.set_theme(style='whitegrid')
 share_columns = [f'{cause} Share' for cause in causes]
-fig, ax1 = plt.subplots(figsize=(14, 8))
+fig, ax1 = plt.subplots(figsize=(10, 6))
 
 # Plot the share of causes on the primary y-axis
-merged_df[share_columns].plot(kind='area', stacked=True, ax=ax1, cmap='Pastel1')
+merged_df[share_columns].plot(kind='area', stacked=True, ax=ax1, cmap='viridis')
 ax1.set_xlabel('Timestamp', fontsize=14)
 ax1.set_ylabel('Share of Causes (%)', fontsize=14)
 ax1.set_xlim([start_time, end_time])
@@ -119,7 +129,7 @@ ax2.plot(merged_df.index, merged_df['Total_Incidents'], color='red', label='Tota
 ax2.set_ylabel('Total Incidents', fontsize=14, color='red')
 ax2.tick_params(axis='y', labelcolor='red')
 
-ax1.grid(True, which='both', axis='both', linewidth=0.5, linestyle='--', color='k')
+ax1.grid(True, which='both', axis='both')
 ax1.set_axisbelow(False)
 
 # Synchronize tick marks between ax1 and ax2
@@ -131,18 +141,26 @@ ymin2, ymax2 = ax2.get_ylim()  # (0, max_incidents)
 scale_factor = (ymax2 - ymin2) / (ymax1 - ymin1) #  max_incidents / 100
 secondary_ticks = ymin2 + (primary_ticks - ymin1) * scale_factor
 
-# Ensure secondary ticks are rounded for better readability
-secondary_ticks = [round(tick) for tick in secondary_ticks]
+# Ensure secondary ticks are rounded for better readability and remove any negative ticks that result from rescaling
+secondary_ticks = [round(tick) for tick in secondary_ticks if tick >= 0]
+if 0 not in secondary_ticks: 
+    secondary_ticks.append(0)
 
 # Set the calculated ticks on secondary y-axis
 ax2.set_yticks(secondary_ticks)
 ax2.grid(False)
 
+# Draw the horizontal line, dashed in red at 0 for secondary scale
+ax2.axhline(y=0, color='red', linestyle='--', linewidth=1)
 
 # Combine legends from both axes
 lines_1, labels_1 = ax1.get_legend_handles_labels()
 lines_2, labels_2 = ax2.get_legend_handles_labels()
-ax1.legend(lines_1 + lines_2, [label.strip('Share').strip() for label in labels_1] + labels_2, loc='upper left', fontsize=12)
+lines = lines_1 + lines_2
+labels = [label.strip('Share').strip() for label in labels_1] + labels_2
+lines.reverse()
+labels.reverse()
+ax1.legend(lines, labels, loc='upper left', fontsize=10)
 
 plt.title('Share of Incident Causes Over Time with Total Incidents', fontsize=16)
 plt.tight_layout()
@@ -177,6 +195,7 @@ sns.lineplot(
     color='red',
     label='Average Delay (mins)',
     linewidth=2,
+    linestyle=':',
     legend=False
 )
 ax1_1.set_ylabel('Average Delay (mins)', fontsize=14, color='red')
@@ -192,15 +211,17 @@ ymin1_1, ymax1_1 = ax1_1.get_ylim()
 scale_factor = (ymax1_1 - ymin1_1) / (ymax1 - ymin1)
 secondary_ticks = ymin1_1 + (primary_ticks - ymin1) * scale_factor
 
-# Ensure secondary ticks are rounded for better readability
-secondary_ticks = [round(tick) for tick in secondary_ticks]
+# Ensure secondary ticks are rounded for better readability and remove any negative ticks that result from rescaling
+secondary_ticks = [round(tick) for tick in secondary_ticks if tick >= 0]
+if 0 not in secondary_ticks: 
+    secondary_ticks.append(0)
 
 # Set the calculated ticks on secondary y-axis
 ax1_1.set_yticks(secondary_ticks)
 ax1_1.grid(False)
 
 # Enable grid and position it above plot elements
-ax1.grid(True, which='both', axis='both', linewidth=0.5, linestyle='--', color='k')
+ax1.grid(True, which='both', axis='both')
 ax1.set_axisbelow(False)  # Moves grid lines to the foreground
 
 # ---------------------------
