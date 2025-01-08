@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import logging.config
 import time
 from datetime import datetime, timedelta, UTC
 import schedule
@@ -10,17 +11,46 @@ from dotenv import load_dotenv
 from TomTom_APIs import Geocode, TrafficIncidents
 from utils import TrafficIncidentsDB, csvReport
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(filename)s - %(message)s")
-os.makedirs("logs", exist_ok=True)
-error_log = logging.FileHandler(os.path.join("logs","error_log.log"))
-error_log.setLevel(logging.WARNING)
-error_log.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(filename)s:%(lineno)d - %(message)s"))
-logging.getLogger().addHandler(error_log)
-debug_log = logging.FileHandler(os.path.join("logs","debug_log.log"))
-debug_log.setLevel(logging.DEBUG)
-debug_log.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(filename)s:%(lineno)d - %(message)s"))
-logging.getLogger().addHandler(debug_log)
+logging_config = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'standard': {
+            'format': '%(asctime)s [%(levelname)s] %(filename)s:%(lineno)d - %(message)s'
+        },
+    },
+    'handlers': {
+        'file_handler_error': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'level': 'WARNING',
+            'formatter': 'standard',
+            'filename': 'logs/error_log.log',
+            'maxBytes': 5*1024*1024,
+            'backupCount': 5,
+        },
+        'file_handler_debug': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'level': 'DEBUG',
+            'formatter': 'standard',
+            'filename': 'logs/debug_log.log',
+            'maxBytes': 5*1024*1024,
+            'backupCount': 5,
+        },
+        'console_handler': {
+            'class': 'logging.StreamHandler',
+            'level': 'INFO',
+            'formatter': 'standard',
+        },
+    },
+    'root': {
+        'handlers': ['file_handler_error', 'file_handler_debug', 'console_handler'],
+        'level': 'DEBUG',
+    },
+}
 
+logging.config.dictConfig(logging_config)
+logger = logging.getLogger(__name__)
+logger.debug("Logging is configured.")
 
 load_dotenv()
 API_KEY = os.getenv('TOMTOM_API_KEY')
@@ -45,7 +75,7 @@ GEOCODING_params = {
 
 def fetch_and_process(INCIDENTS_params, csv_file, database, threshold_minutes=5):
     try:
-        logging.info("Starting fetch for incidents.")
+        logger.info("Starting fetch for incidents.")
         
         # Fetch incidents
         IncidentsAPI.get_incidents(INCIDENTS_params)
@@ -62,10 +92,10 @@ def fetch_and_process(INCIDENTS_params, csv_file, database, threshold_minutes=5)
             database.mark_ended_incidents(threshold_minutes=threshold_minutes)
  
         else:
-            logging.info("No incidents found.")
+            logger.info("No incidents found.")
     
     except Exception as e:
-        logging.error("An error occurred while fetching and processing incidents.", exc_info=True)
+        logger.error("An error occurred while fetching and processing incidents.", exc_info=True)
 
 if __name__ == "__main__":
     location = "Singapore"
@@ -76,16 +106,16 @@ if __name__ == "__main__":
     IncidentsAPI = TrafficIncidents(TRAFFIC_INCIDENTS_API_URLS)
 
     # Get and reformat bounding box
-    logging.info("Starting Geocoding.")
+    logger.info("Starting Geocoding.")
     bbox = Geocode_API.get_bbox(GEOCODING_params, location)
     if bbox:
         reformatted_bbox = Geocode_API.reformatbbox(bbox)
         INCIDENTS_params['bbox'] = reformatted_bbox
-        logging.info(f"Formatted BBox (min_lon,min_lat,max_lon,max_lat): ({reformatted_bbox})")
+        logger.info(f"Formatted BBox (min_lon,min_lat,max_lon,max_lat): ({reformatted_bbox})")
     else:
-        logging.error("Failed to retrieve bounding box.")
+        logger.error("Failed to retrieve bounding box.")
         exit()
-    logging.info("TomTom Incident Fetcher Started.")
+    logger.info("TomTom Incident Fetcher Started.")
 
     # Initialize the SQLite DataBase
     db = TrafficIncidentsDB(dir_path, location=location)
