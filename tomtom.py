@@ -16,6 +16,9 @@ logging_config = {
     'disable_existing_loggers': False,
     'formatters': {
         'standard': {
+            'format': '%(asctime)s [%(levelname)s] %(message)s'
+        },
+        'detailed': {
             'format': '%(asctime)s [%(levelname)s] %(filename)s:%(lineno)d - %(message)s'
         },
     },
@@ -23,7 +26,7 @@ logging_config = {
         'file_handler_error': {
             'class': 'logging.handlers.RotatingFileHandler',
             'level': 'WARNING',
-            'formatter': 'standard',
+            'formatter': 'detailed',
             'filename': 'logs/error_log.log',
             'maxBytes': 5*1024*1024,
             'backupCount': 5,
@@ -31,7 +34,7 @@ logging_config = {
         'file_handler_debug': {
             'class': 'logging.handlers.RotatingFileHandler',
             'level': 'DEBUG',
-            'formatter': 'standard',
+            'formatter': 'detailed',
             'filename': 'logs/debug_log.log',
             'maxBytes': 5*1024*1024,
             'backupCount': 5,
