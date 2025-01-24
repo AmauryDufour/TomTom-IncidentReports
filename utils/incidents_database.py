@@ -18,10 +18,15 @@ if not logger.hasHandlers():
     logger.propagate = False
 
 class TrafficIncidentsDB:
-    def __init__(self, dir_path, db_path = None, location=None):
-        self.dir_path = dir_path
-        if not db_path : self.db_path = os.path.join(self.dir_path, f"{location}_Incidents.db")
-        else : self.db_path = db_path
+    def __init__(self, dir_path = None, db_path = None, location=None):
+        if dir_path:
+            self.dir_path = dir_path
+        elif db_path:
+            self.dir_path = os.path.dirname(db_path)
+        if not db_path : 
+            self.db_path = os.path.join(self.dir_path, f"{location}_Incidents.db")
+        else : 
+            self.db_path = db_path
         self.conn = sqlite3.connect(self.db_path)
         logger.info(f"Connection to {self.db_path} database established")
         self.initialize_db()
@@ -248,6 +253,7 @@ class TrafficIncidentsDB:
             ''', (start_datetime, end_datetime, start_datetime, end_datetime))
 
             rows = cursor.fetchall()
+            print(len(rows))
             features = []
             for row in rows:
                 (id_, type_, category, geometry_type, coordinates, magnitudeOfDelay, startTime,
